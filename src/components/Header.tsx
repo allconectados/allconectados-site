@@ -26,13 +26,19 @@ export function Header({ onLogin }: HeaderProps) {
       return;
     }
 
-    let active = true;
+    /*
+     * Depois desta verificação, activeClient é tratado
+     * pelo TypeScript como um cliente Supabase não nulo.
+     */
+    const activeClient: NonNullable<typeof supabase> = client;
+
+    let componentIsActive = true;
 
     async function synchronizeUser(
       userId?: string,
       userEmail?: string,
     ) {
-      if (!active) return;
+      if (!componentIsActive) return;
 
       setEmail(userEmail ?? null);
 
@@ -42,43 +48,67 @@ export function Header({ onLogin }: HeaderProps) {
         return;
       }
 
-      const { data, error } = await client
+      const { data, error } = await activeClient
         .from("profiles")
         .select("full_name, role, status")
         .eq("id", userId)
-        .single();
+        .maybeSingle();
 
-      if (!active) return;
+      if (!componentIsActive) return;
 
       if (error) {
-        console.error("Erro ao consultar perfil:", error.message);
+        console.error(
+          "Erro ao consultar o perfil do usuário:",
+          error.message,
+        );
+
         setProfile(null);
       } else {
-        setProfile(data as Profile);
+        setProfile((data as Profile | null) ?? null);
       }
 
       setLoading(false);
     }
 
-    client.auth.getSession().then(({ data }) => {
-      void synchronizeUser(
+    async function loadInitialSession() {
+      const { data, error } =
+        await activeClient.auth.getSession();
+
+      if (!componentIsActive) return;
+
+      if (error) {
+        console.error(
+          "Erro ao consultar a sessão:",
+          error.message,
+        );
+
+        setEmail(null);
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+
+      await synchronizeUser(
         data.session?.user.id,
         data.session?.user.email,
       );
-    });
+    }
 
-    const { data: listener } = client.auth.onAuthStateChange(
-      (_event, session) => {
-        void synchronizeUser(
-          session?.user.id,
-          session?.user.email,
-        );
-      },
-    );
+    void loadInitialSession();
+
+    const { data: authListener } =
+      activeClient.auth.onAuthStateChange(
+        (_event, session) => {
+          void synchronizeUser(
+            session?.user.id,
+            session?.user.email,
+          );
+        },
+      );
 
     return () => {
-      active = false;
-      listener.subscription.unsubscribe();
+      componentIsActive = false;
+      authListener.subscription.unsubscribe();
     };
   }, []);
 
@@ -102,8 +132,15 @@ export function Header({ onLogin }: HeaderProps) {
     email?.split("@")[0] ||
     "Usuário";
 
-  const roleLabel =
-    profile?.role === "admin" ? "Administrador" : "Professor";
+  let roleLabel = "Professor";
+
+  if (loading) {
+    roleLabel = "Carregando perfil...";
+  } else if (profile?.status === "suspended") {
+    roleLabel = "Acesso suspenso";
+  } else if (profile?.role === "admin") {
+    roleLabel = "Administrador";
+  }
 
   return (
     <header className="site-header">
@@ -117,10 +154,14 @@ export function Header({ onLogin }: HeaderProps) {
             src="/logo-allconectados.png"
             alt="Logo Allconectados"
           />
+
           <span>Allconectados</span>
         </Link>
 
-        <nav className="main-nav" aria-label="Navegação principal">
+        <nav
+          className="main-nav"
+          aria-label="Navegação principal"
+        >
           <a href="/#agentes">Agentes</a>
           <a href="/#sobre">Sobre</a>
 
@@ -154,6 +195,7 @@ export function Header({ onLogin }: HeaderProps) {
               </div>
 
               <button
+                type="button"
                 className="button button-outline"
                 onClick={handleLogout}
               >
@@ -163,6 +205,7 @@ export function Header({ onLogin }: HeaderProps) {
             </>
           ) : (
             <button
+              type="button"
               className="button button-outline"
               onClick={onLogin}
             >
