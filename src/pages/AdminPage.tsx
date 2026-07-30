@@ -1,3 +1,4 @@
+// VERSÃO CORRIGIDA: retorno das RPCs validado antes de atualizar o estado
 import {
   useEffect,
   useState,
@@ -81,6 +82,39 @@ type AccessGrantRow = {
   granted_at: string;
   expires_at: string | null;
 };
+
+function isAccessGrantRow(
+  value: unknown,
+): value is AccessGrantRow {
+  if (
+    typeof value !== "object" ||
+    value === null
+  ) {
+    return false;
+  }
+
+  const row = value as Record<string, unknown>;
+
+  return (
+    typeof row.user_id === "string" &&
+    typeof row.email === "string" &&
+    (typeof row.full_name === "string" ||
+      row.full_name === null) &&
+    (row.access_status === "active" ||
+      row.access_status === "revoked") &&
+    typeof row.granted_at === "string" &&
+    (typeof row.expires_at === "string" ||
+      row.expires_at === null)
+  );
+}
+
+function getAccessGrantRows(
+  value: unknown,
+): AccessGrantRow[] {
+  return Array.isArray(value)
+    ? value.filter(isAccessGrantRow)
+    : [];
+}
 
 type FormState = {
   name: string;
@@ -431,17 +465,12 @@ export function AdminPage() {
               { merge: false }
             >(),
 
-          client
-            .rpc(
-              "admin_get_agent_link_config",
-              {
-                p_agent_id: agent.id,
-              },
-            )
-            .overrideTypes<
-              Array<AgentLinkConfig>,
-              { merge: false }
-            >(),
+          client.rpc(
+            "admin_get_agent_link_config",
+            {
+              p_agent_id: agent.id,
+            },
+          ),
         ]);
 
       if (detailsResult.error) {
@@ -821,29 +850,19 @@ export function AdminPage() {
             { merge: false }
           >(),
 
-        client
-          .rpc(
-            "admin_list_agent_access",
-            {
-              p_agent_id: agent.id,
-            },
-          )
-          .overrideTypes<
-            Array<AccessGrantRow>,
-            { merge: false }
-          >(),
+        client.rpc(
+          "admin_list_agent_access",
+          {
+            p_agent_id: agent.id,
+          },
+        ),
 
-        client
-          .rpc(
-            "admin_get_agent_link_config",
-            {
-              p_agent_id: agent.id,
-            },
-          )
-          .overrideTypes<
-            Array<AgentLinkConfig>,
-            { merge: false }
-          >(),
+        client.rpc(
+          "admin_get_agent_link_config",
+          {
+            p_agent_id: agent.id,
+          },
+        ),
       ]);
 
       if (professorsResult.error) {
@@ -863,7 +882,7 @@ export function AdminPage() {
       );
 
       setAccessGrants(
-        grantsResult.data ?? [],
+        getAccessGrantRows(grantsResult.data),
       );
 
       setAccessLinkConfig(
@@ -897,23 +916,18 @@ export function AdminPage() {
       return;
     }
 
-    const { data, error } = await client
-      .rpc(
-        "admin_list_agent_access",
-        {
-          p_agent_id: agentId,
-        },
-      )
-      .overrideTypes<
-        Array<AccessGrantRow>,
-        { merge: false }
-      >();
+    const { data, error } = await client.rpc(
+      "admin_list_agent_access",
+      {
+        p_agent_id: agentId,
+      },
+    );
 
     if (error) {
       throw error;
     }
 
-    setAccessGrants(data ?? []);
+    setAccessGrants(getAccessGrantRows(data));
   }
 
   async function grantAccess(userId: string) {
