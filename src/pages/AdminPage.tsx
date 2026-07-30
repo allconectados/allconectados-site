@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useMemo,
   useState,
   type FormEvent,
 } from "react";
@@ -216,28 +215,17 @@ async function fetchAgents(): Promise<AgentRow[]> {
   const { data, error } = await client
     .from("agents")
     .select(
-      [
-        "id",
-        "name",
-        "slug",
-        "short_description",
-        "category",
-        "image_url",
-        "status",
-        "featured",
-        "display_order",
-        "created_at",
-        "updated_at",
-      ].join(","),
+      "id, name, slug, short_description, category, image_url, status, featured, display_order, created_at, updated_at",
     )
     .order("display_order", { ascending: true })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .overrideTypes<Array<AgentRow>, { merge: false }>();
 
   if (error) {
     throw error;
   }
 
-  return (data ?? []) as AgentRow[];
+  return data ?? [];
 }
 
 export function AdminPage() {
@@ -282,14 +270,6 @@ export function AdminPage() {
   const [accessBusyUserId, setAccessBusyUserId] =
     useState<string | null>(null);
 
-  const editingAgent = useMemo(
-    () =>
-      agents.find(
-        (agent) => agent.id === selectedAgentId,
-      ) ?? null,
-    [agents, selectedAgentId],
-  );
-
   useEffect(() => {
     let componentIsActive = true;
 
@@ -330,20 +310,21 @@ export function AdminPage() {
         }
 
         const {
-          data: profileData,
+          data: profile,
           error: profileError,
         } = await client
           .from("profiles")
           .select("full_name, role, status")
           .eq("id", user.id)
-          .maybeSingle();
+          .maybeSingle()
+          .overrideTypes<
+            AdminProfile,
+            { merge: false }
+          >();
 
         if (profileError) {
           throw profileError;
         }
-
-        const profile =
-          profileData as AdminProfile | null;
 
         const userIsAuthorized =
           profile?.role === "admin" &&
@@ -441,24 +422,26 @@ export function AdminPage() {
           client
             .from("agent_details")
             .select(
-              [
-                "agent_id",
-                "what_it_does",
-                "before_start",
-                "tutorial_steps",
-                "youtube_url",
-                "youtube_title",
-              ].join(","),
+              "agent_id, what_it_does, before_start, tutorial_steps, youtube_url, youtube_title",
             )
             .eq("agent_id", agent.id)
-            .maybeSingle(),
+            .maybeSingle()
+            .overrideTypes<
+              AgentDetailsRow,
+              { merge: false }
+            >(),
 
-          client.rpc(
-            "admin_get_agent_link_config",
-            {
-              p_agent_id: agent.id,
-            },
-          ),
+          client
+            .rpc(
+              "admin_get_agent_link_config",
+              {
+                p_agent_id: agent.id,
+              },
+            )
+            .overrideTypes<
+              Array<AgentLinkConfig>,
+              { merge: false }
+            >(),
         ]);
 
       if (detailsResult.error) {
@@ -469,8 +452,7 @@ export function AdminPage() {
         throw linkResult.error;
       }
 
-      const details =
-        detailsResult.data as AgentDetailsRow | null;
+      const details = detailsResult.data;
 
       const linkConfig = getFirstLinkConfig(
         linkResult.data,
@@ -645,7 +627,11 @@ export function AdminPage() {
             created_by: userId,
           })
           .select("id")
-          .single();
+          .single()
+          .overrideTypes<
+            { id: string },
+            { merge: false }
+          >();
 
         if (error) {
           throw error;
@@ -829,21 +815,35 @@ export function AdminPage() {
             "id, email, full_name, status",
           )
           .eq("role", "professor")
-          .order("email", { ascending: true }),
+          .order("email", { ascending: true })
+          .overrideTypes<
+            Array<ProfessorRow>,
+            { merge: false }
+          >(),
 
-        client.rpc(
-          "admin_list_agent_access",
-          {
-            p_agent_id: agent.id,
-          },
-        ),
+        client
+          .rpc(
+            "admin_list_agent_access",
+            {
+              p_agent_id: agent.id,
+            },
+          )
+          .overrideTypes<
+            Array<AccessGrantRow>,
+            { merge: false }
+          >(),
 
-        client.rpc(
-          "admin_get_agent_link_config",
-          {
-            p_agent_id: agent.id,
-          },
-        ),
+        client
+          .rpc(
+            "admin_get_agent_link_config",
+            {
+              p_agent_id: agent.id,
+            },
+          )
+          .overrideTypes<
+            Array<AgentLinkConfig>,
+            { merge: false }
+          >(),
       ]);
 
       if (professorsResult.error) {
@@ -859,13 +859,11 @@ export function AdminPage() {
       }
 
       setProfessors(
-        (professorsResult.data ??
-          []) as ProfessorRow[],
+        professorsResult.data ?? [],
       );
 
       setAccessGrants(
-        (grantsResult.data ??
-          []) as AccessGrantRow[],
+        grantsResult.data ?? [],
       );
 
       setAccessLinkConfig(
@@ -899,20 +897,23 @@ export function AdminPage() {
       return;
     }
 
-    const { data, error } = await client.rpc(
-      "admin_list_agent_access",
-      {
-        p_agent_id: agentId,
-      },
-    );
+    const { data, error } = await client
+      .rpc(
+        "admin_list_agent_access",
+        {
+          p_agent_id: agentId,
+        },
+      )
+      .overrideTypes<
+        Array<AccessGrantRow>,
+        { merge: false }
+      >();
 
     if (error) {
       throw error;
     }
 
-    setAccessGrants(
-      (data ?? []) as AccessGrantRow[],
-    );
+    setAccessGrants(data ?? []);
   }
 
   async function grantAccess(userId: string) {
